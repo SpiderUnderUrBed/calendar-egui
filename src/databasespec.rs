@@ -20,6 +20,29 @@ enum SerializeableMonth {
     November,
     December,
 }
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub enum SimpleTimes {
+    Year(u64),
+    Month(u64),
+    Week(u64),
+    Day(u64),
+    Hour(u64),
+    Minuite(u64)
+}
+// impl From<&str> for SimpleTimes {
+//     fn from(value: &str) -> Self {
+//         if value.len() > 0 {
+//             match value.chars().last().unwrap() {
+//                 "h" => Self::Hour(())
+//                 _ => Self::Minuite(0)
+//             }
+//         } else {
+//             SimpleTimes::Minuite(0)
+//         }
+//     }
+// }
+
 impl Into<String> for SerializeableMonth {
     fn into(self) -> String {
         match self {
@@ -175,6 +198,7 @@ pub struct Event {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) time: EventTime,
+    pub(crate) notify_times: Vec<SimpleTimes>
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]

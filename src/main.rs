@@ -43,6 +43,7 @@ struct WorkingEvent {
     working_minute: String,
     working_name: String,
     working_desc: String,
+    working_notification_times: String
 }
 impl Default for WorkingEvent {
     fn default() -> Self {
@@ -54,7 +55,8 @@ impl Default for WorkingEvent {
             working_hour: Default::default(), 
             working_minute: Default::default(), 
             working_name: Default::default(), 
-            working_desc: Default::default() 
+            working_desc: Default::default(),
+            working_notification_times: Default::default(), 
         }
     }
 }
@@ -240,6 +242,10 @@ impl eframe::App for MyApp {
                             &mut selected_date.working_hour.parse::<u64>(),
                             &mut selected_date.working_minute.parse::<u64>(),
                         ) {
+                            // let notify_times = selected_date.working_notification_times.trim().split(",").map(
+                            //     |time| {
+
+                            //     }).collect();
                             let event = Event {
                                 name: selected_date.working_name.clone(),
                                 description: selected_date.working_desc.clone(),
@@ -250,6 +256,7 @@ impl eframe::App for MyApp {
                                     *working_hour,
                                     *working_minute,
                                 ),
+                                notify_times: vec![],
                             };
                             let add_event_result = self.database.add_event(event.clone());
                             if add_event_result.is_ok(){
@@ -502,6 +509,7 @@ fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerRespo
                     working_minute: String::new(),
                     working_desc: String::new(),
                     working_name: String::new(),
+                    working_notification_times: String::new(),
                 });
                 state.show_events = true;
             }

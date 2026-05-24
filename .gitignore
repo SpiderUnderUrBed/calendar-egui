@@ -1,0 +1,4 @@
+target/
+.direnv/
+.history/
+database.json

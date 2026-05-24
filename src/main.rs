@@ -86,6 +86,7 @@ struct MyApp {
     current_month: Option<MonthTime>,
     working_settings: Settings,
     selected_date: Option<WorkingEvent>,
+    rt: tokio::runtime::Runtime, 
     client: reqwest::Client
 }
 
@@ -98,6 +99,7 @@ impl Default for MyApp {
             current_month: None,
             working_settings: Settings::default(),
             selected_date: None,
+            rt: tokio::runtime::Runtime::new().unwrap(),
             client: reqwest::Client::new()
         }
     }
@@ -129,6 +131,7 @@ impl MyApp {
             }),
             working_settings: database.get_settings().unwrap(),
             selected_date: None,
+            rt: tokio::runtime::Runtime::new().unwrap(),
             client: reqwest::Client::new()
         }
     }
@@ -251,7 +254,7 @@ impl eframe::App for MyApp {
                             let add_event_result = self.database.add_event(event.clone());
                             if add_event_result.is_ok(){
                                 if let Ok(settings) = self.database.get_settings(){
-                                    forward_event(self.client.clone(), settings, event);
+                                    forward_event(&self.rt, self.client.clone(), settings, event);
                                 }
                                 // if let Ok(settings) = self.database.get_settings(){
                                 //     if settings.enabled_websockets {
@@ -422,7 +425,7 @@ impl eframe::App for MyApp {
                     if ui.button("Forward all events over websocket").clicked() {
                         if let Ok(events) = self.database.get_events(){
                             for event in events {
-                                forward_event(self.client.clone(), settings.clone(), event);
+                                forward_event(&self.rt, self.client.clone(), settings.clone(), event);
                             }
                         }
                     };
@@ -542,8 +545,8 @@ fn get_days_in_month_string(year: &str, month: &str) -> Option<u64> {
         _ => None,
     }
 }
-fn forward_event(client: reqwest::Client, settings: Settings, event: Event) {
-    tokio::spawn(async move {
+fn forward_event(rt: &tokio::runtime::Runtime, client: reqwest::Client, settings: Settings, event: Event) {
+    rt.spawn(async move {
         let _ = client
             .post(&settings.websocket_url)
             .header("authorization", &settings.websocket_header)

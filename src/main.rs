@@ -194,6 +194,8 @@ impl eframe::App for MyApp {
                                 .show(ui, |ui| {
                                     ui.set_min_width(ui.available_width());
                                     ui.label(event.name);
+                                    ui.label(event.description);
+                                    ui.label(format!("{}:{}", event.time.get_hour(), event.time.get_minute()));
                                     if ui.button("Remove event").clicked(){
                                         let _ = self.database.remove_event_by_time(event.time);
                                     }

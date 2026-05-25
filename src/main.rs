@@ -4,6 +4,7 @@ use std::str::FromStr;
 use chrono::Date;
 use chrono::Datelike;
 use chrono::Month;
+use chrono::NaiveDate;
 use eframe::egui;
 use egui::LayerId;
 use egui::Order;
@@ -413,6 +414,19 @@ impl eframe::App for MyApp {
                             ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
                                 
                                 ui.horizontal(|ui| {
+                                    if week == 0 {
+                                        let offset = month_start_offset( self.current_month.clone().unwrap().year, get_month_index(self.current_month.clone().unwrap().month).unwrap() as u64 + 1);
+                                        for _ in 0..offset {
+                                        egui::Frame::new()
+                                            .fill(egui::Color32::from_rgb(0, 0, 0))
+                                            .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+                                            .inner_margin(12.0)
+                                            .show(ui, |ui| {
+                                                ui.set_min_size(egui::vec2(175.0, 100.0));
+                                            });
+                                        }
+
+                                    }
                                     for day in 1..8 {
                                         let full_day = week * 7 + day;
                                         let is_current_period =
@@ -818,7 +832,12 @@ fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerRespo
         }
     })
 }
-
+fn month_start_offset(year: u64, month: u64) -> u64 {
+    NaiveDate::from_ymd_opt(year as i32, month as u32, 1)
+        .unwrap()
+        .weekday()
+        .num_days_from_monday() as u64
+}
 fn get_days_in_month_chrono(year: &str, month: Month) -> u64 {
     match month {
         Month::January => 31,

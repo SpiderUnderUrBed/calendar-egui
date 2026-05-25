@@ -434,6 +434,9 @@ impl eframe::App for MyApp {
                                         }
                                     }
                                     for day in 1..8 {
+                                        if day >= offset && week == 0 {
+                                            break;
+                                        }
                                         let full_day = week * 7 + day;
                                         let is_current_period =
                                             self.current_month.clone().unwrap().month == date_month

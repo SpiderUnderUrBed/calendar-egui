@@ -5,6 +5,7 @@ use chrono::Date;
 use chrono::Datelike;
 use chrono::Month;
 use chrono::NaiveDate;
+use chrono::offset;
 use eframe::egui;
 use egui::LayerId;
 use egui::Order;
@@ -380,7 +381,8 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("Egui calendar");
-                let days: u64 = get_days_in_month_chrono("", month);
+                let offset = month_start_offset( self.current_month.clone().unwrap().year, get_month_index(self.current_month.clone().unwrap().month).unwrap() as u64 + 1);
+                let days: u64 = get_days_in_month_chrono("", month)+offset;
                 ui.horizontal(|ui| {
                     if ui.button("<").clicked() {
                         self.current_month.as_mut().unwrap().month =
@@ -412,17 +414,15 @@ impl eframe::App for MyApp {
                         });
                         for week in 0..days / 7 {
                             ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
-                                
                                 ui.horizontal(|ui| {
                                     if week == 0 {
-                                        let offset = month_start_offset( self.current_month.clone().unwrap().year, get_month_index(self.current_month.clone().unwrap().month).unwrap() as u64 + 1);
                                         for _ in 0..offset {
                                         egui::Frame::new()
                                             .fill(egui::Color32::from_rgb(0, 0, 0))
                                             .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
                                             .inner_margin(12.0)
                                             .show(ui, |ui| {
-                                                ui.set_min_size(egui::vec2(175.0, 100.0));
+                                                ui.set_min_size(egui::vec2(175.0, 175.0));
                                             });
                                         }
 
@@ -434,7 +434,7 @@ impl eframe::App for MyApp {
                                                 && self.current_month.clone().unwrap().year
                                                     == date_year;
                                         let is_current_day =
-                                            u32::try_from(full_day).unwrap() == date.day();
+                                            u32::try_from(full_day).unwrap() == date.day() + offset as u32;
                                         egui::Frame::new()
                                             .fill(if is_current_day && is_current_period {
                                                 egui::Color32::from_rgb(255, 255, 0)
@@ -443,7 +443,13 @@ impl eframe::App for MyApp {
                                             })
                                             .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
                                             .inner_margin(12.0)
-                                            .show(ui, |ui| date_cell(self, ui, full_day));
+                                            .show(ui, |ui| date_cell(self, ui, {
+                                                if full_day.checked_sub(offset).is_some(){
+                                                    full_day-offset
+                                                } else {
+                                                    full_day
+                                                }
+                                            }));
                                         ui.end_row();
                                     }
                                 });
@@ -463,14 +469,20 @@ impl eframe::App for MyApp {
                                                 && self.current_month.clone().unwrap().year
                                                     == date_year;
                                         let is_current_day =
-                                            u32::try_from(full_day).unwrap() == date.day();
+                                            u32::try_from(full_day).unwrap() == date.day() + offset as u32;
                                         egui::Frame::new()
                                             .fill(if is_current_day && is_current_period {
                                                 egui::Color32::from_rgb(255, 255, 0)
                                             } else {
                                                 egui::Color32::from_rgb(0, 0, 0)
                                             })
-                                            .show(ui, |ui| date_cell(self, ui, full_day));
+                                            .show(ui, |ui| date_cell(self, ui, {
+                                                if full_day.checked_sub(offset).is_some(){
+                                                    full_day-offset
+                                                } else {
+                                                    full_day
+                                                }
+                                            }));
                                         ui.end_row();
                                     });
                             }
@@ -798,7 +810,7 @@ fn failure_frame(ui: &mut egui::Ui, text: String) -> egui::InnerResponse<egui::R
 }
 
 fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerResponse<()> {
-    ui.set_min_size(egui::vec2(175.0, 100.0));
+    ui.set_min_size(egui::vec2(175.0, 175.0));
     ui.vertical(|ui: &mut egui::Ui| {
         ui.label(day.to_string());
         if let Some(month_time) = &state.current_month {

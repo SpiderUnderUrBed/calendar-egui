@@ -738,13 +738,13 @@ fn intersects_by_day(
     }
     if times.len() == 0 {
         if repeat_until_current_day || freeze_at_time.is_some() {
-            if (get_month_index(comparison_time.month).unwrap() + 1
+            if (get_month_index(comparison_time.month).unwrap()
                 <= get_month_index(date.month).unwrap()
                 && comparison_time.year <= date.year
                 && comparison_time.month >= original_time.month
                 && comparison_time.year >= original_time.year)
             {
-                if get_month_index(comparison_time.month).unwrap() + 1
+                if get_month_index(comparison_time.month).unwrap()
                     == get_month_index(date.month).unwrap()
                     && comparison_time.year == date.year
                 {

@@ -740,20 +740,24 @@ fn intersects_by_day(
     }
     if times.len() == 0 {
         if repeat_until_current_day || freeze_at_time.is_some() {
-            if (get_month_index(comparison_time.month).unwrap()
+            if get_month_index(comparison_time.month).unwrap()
                 <= get_month_index(date.month).unwrap()
                 && comparison_time.year <= date.year
                 && comparison_time.month >= original_time.month
-                && comparison_time.year >= original_time.year)
+                && comparison_time.year >= original_time.year
             {
                 if get_month_index(comparison_time.month).unwrap()
                     == get_month_index(date.month).unwrap()
                     && comparison_time.year == date.year
                 {
-                    if (date.day as u64) >= comparison_time.day {
+                    if date.day >= comparison_time.day && comparison_time.day >= original_time.day {
                         intersects = true;
                     }
-                } else if comparison_time.day >= original_time.day {
+                } else if comparison_time.month == original_time.month {
+                    if comparison_time.day >= original_time.day {
+                        intersects = true;
+                    }
+                } else {
                     intersects = true;
                 }
             }

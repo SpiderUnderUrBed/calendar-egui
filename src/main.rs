@@ -1,6 +1,7 @@
 use std::os::linux::raw;
 use std::str::FromStr;
 
+use chrono::Date;
 use chrono::Datelike;
 use chrono::Month;
 use eframe::egui;
@@ -162,7 +163,9 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let all_days = vec!["Monday", "Tuesday", "Wensday", "Thursday", "Friday", "Saturday", "Sunday"];
+        let all_days = vec![
+            "Monday", "Tuesday", "Wensday", "Thursday", "Friday", "Saturday", "Sunday",
+        ];
 
         let date = chrono::offset::Local::now();
         let date_month = Month::try_from(u8::try_from(date.month()).unwrap()).unwrap();
@@ -205,6 +208,21 @@ impl eframe::App for MyApp {
                                         event.clone().time.get_hour(),
                                         event.clone().time.get_minute()
                                     ));
+                                    if event.repeat_until_current_day {
+                                        if ui.button("Freeze event at time").clicked() {
+                                            if let (Ok(working_hour), Ok(working_minute)) = (
+                                                &mut selected_date.working_hour.parse::<u64>(),
+                                                &mut selected_date.working_minute.parse::<u64>(),
+                                            ) {
+                                                let _ = self.database.remove_event_by_name(event.clone().name);
+                                                let mut new_event = event.clone();
+                                                new_event.freeze_at_time = Some(
+                                                    EventTime::new(selected_date.time.year, selected_date.time.month, selected_date.time.day, *working_hour, *working_minute)
+                                                );
+                                                let _ = self.database.add_event(new_event);
+                                            }
+                                        }
+                                    }
                                     if ui.button("Remove event").clicked() {
                                         let cloned_event = event.clone();
                                         if let Ok(settings) = self.database.get_settings() {
@@ -282,7 +300,8 @@ impl eframe::App for MyApp {
                                 ),
                                 notify_times: parse_simple_times(&selected_date.working_notification_times),
                                 repeat_times: parse_simple_times(&selected_date.working_repeat_times),
-                                repeat_until_current_day: selected_date.working_update_repeat_for_current_day
+                                repeat_until_current_day: selected_date.working_update_repeat_for_current_day,
+                                freeze_at_time: None
                             };
                             let add_event_result = self.database.add_event(event.clone());
                             if add_event_result.is_ok() {
@@ -356,105 +375,107 @@ impl eframe::App for MyApp {
             })
         });
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.heading("Egui calendar");
-            let days: u64 = get_days_in_month_chrono("", month);
-            ui.horizontal(|ui| {
-                if ui.button("<").clicked() {
-                    self.current_month.as_mut().unwrap().month =
-                        shift_months(self.current_month.clone().unwrap().month, -1)
-                }
-                ui.label(month.name());
-                if ui.button(">").clicked() {
-                    self.current_month.as_mut().unwrap().month =
-                        shift_months(self.current_month.clone().unwrap().month, 1)
-                }
-                ui.add_space(16.0);
-                if ui.button("<").clicked() {
-                    self.current_month.as_mut().unwrap().year =
-                        self.current_month.clone().unwrap().year - 1;
-                }
-                ui.label(year.to_string());
-                if ui.button(">").clicked() {
-                    self.current_month.as_mut().unwrap().year =
-                        self.current_month.clone().unwrap().year + 1;
-                }
-            });
-            egui::Grid::new("date_grid").show(ui, |ui| {
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                    for day in all_days {
-                        ui.label(day);
-                        ui.add_space(32.0);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.heading("Egui calendar");
+                let days: u64 = get_days_in_month_chrono("", month);
+                ui.horizontal(|ui| {
+                    if ui.button("<").clicked() {
+                        self.current_month.as_mut().unwrap().month =
+                            shift_months(self.current_month.clone().unwrap().month, -1)
+                    }
+                    ui.label(month.name());
+                    if ui.button(">").clicked() {
+                        self.current_month.as_mut().unwrap().month =
+                            shift_months(self.current_month.clone().unwrap().month, 1)
+                    }
+                    ui.add_space(16.0);
+                    if ui.button("<").clicked() {
+                        self.current_month.as_mut().unwrap().year =
+                            self.current_month.clone().unwrap().year - 1;
+                    }
+                    ui.label(year.to_string());
+                    if ui.button(">").clicked() {
+                        self.current_month.as_mut().unwrap().year =
+                            self.current_month.clone().unwrap().year + 1;
                     }
                 });
-                    for week in 0..days / 7 {
-                        ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
-                            ui.horizontal(|ui| {
-                                for day in 1..8 {
-                                    let full_day = week * 7 + day;
-                                    let is_current_period =
-                                        self.current_month.clone().unwrap().month == date_month
-                                            && self.current_month.clone().unwrap().year
-                                                == date_year;
-                                    let is_current_day =
-                                        u32::try_from(full_day).unwrap() == date.day();
-                                    egui::Frame::new()
-                                        .fill(if is_current_day && is_current_period {
-                                            egui::Color32::from_rgb(255, 255, 0)
-                                        } else {
-                                            egui::Color32::from_rgb(0, 0, 0)
-                                        })
-                                        .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                                        .inner_margin(12.0)
-                                        .show(ui, |ui| date_cell(self, ui, full_day));
-                                    ui.end_row();
-                                }
-                            });
+                egui::Grid::new("date_grid").show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            for day in all_days {
+                                ui.label(day);
+                                ui.add_space(32.0);
+                            }
                         });
-                    }
-                    ui.horizontal(|ui| {
-                        for remaining_days in (0..days % 7 + 1).rev() {
-                            egui::Frame::new()
-                                .fill(egui::Color32::from_rgb(0, 0, 0))
-                                .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                                .inner_margin(12.0)
-                                .show(ui, |ui| {
-                                    let full_day = days - remaining_days;
-                                    let is_current_period =
-                                        self.current_month.clone().unwrap().month == date_month
-                                            && self.current_month.clone().unwrap().year
-                                                == date_year;
-                                    let is_current_day =
-                                        u32::try_from(full_day).unwrap() == date.day();
-                                    egui::Frame::new()
-                                        .fill(if is_current_day && is_current_period {
-                                            egui::Color32::from_rgb(255, 255, 0)
-                                        } else {
-                                            egui::Color32::from_rgb(0, 0, 0)
-                                        })
-                                        .show(ui, |ui| date_cell(self, ui, full_day));
-                                    ui.end_row();
+                        for week in 0..days / 7 {
+                            ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
+                                ui.horizontal(|ui| {
+                                    for day in 1..8 {
+                                        let full_day = week * 7 + day;
+                                        let is_current_period =
+                                            self.current_month.clone().unwrap().month == date_month
+                                                && self.current_month.clone().unwrap().year
+                                                    == date_year;
+                                        let is_current_day =
+                                            u32::try_from(full_day).unwrap() == date.day();
+                                        egui::Frame::new()
+                                            .fill(if is_current_day && is_current_period {
+                                                egui::Color32::from_rgb(255, 255, 0)
+                                            } else {
+                                                egui::Color32::from_rgb(0, 0, 0)
+                                            })
+                                            .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+                                            .inner_margin(12.0)
+                                            .show(ui, |ui| date_cell(self, ui, full_day));
+                                        ui.end_row();
+                                    }
                                 });
+                            });
                         }
+                        ui.horizontal(|ui| {
+                            for remaining_days in (0..days % 7 + 1).rev() {
+                                egui::Frame::new()
+                                    .fill(egui::Color32::from_rgb(0, 0, 0))
+                                    .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+                                    .inner_margin(12.0)
+                                    .show(ui, |ui| {
+                                        let full_day = days - remaining_days;
+                                        let is_current_period =
+                                            self.current_month.clone().unwrap().month == date_month
+                                                && self.current_month.clone().unwrap().year
+                                                    == date_year;
+                                        let is_current_day =
+                                            u32::try_from(full_day).unwrap() == date.day();
+                                        egui::Frame::new()
+                                            .fill(if is_current_day && is_current_period {
+                                                egui::Color32::from_rgb(255, 255, 0)
+                                            } else {
+                                                egui::Color32::from_rgb(0, 0, 0)
+                                            })
+                                            .show(ui, |ui| date_cell(self, ui, full_day));
+                                        ui.end_row();
+                                    });
+                            }
+                        });
                     });
                 });
-            });
-            if let Ok(settings) = self.database.get_settings() {
-                if settings.enabled_webhooks {
-                    if ui.button("Forward all events over webhook").clicked() {
-                        if let Ok(events) = self.database.get_events() {
-                            for event in events {
-                                forward_event(
-                                    &self.rt,
-                                    self.client.clone(),
-                                    settings.clone(),
-                                    event,
-                                );
+                if let Ok(settings) = self.database.get_settings() {
+                    if settings.enabled_webhooks {
+                        if ui.button("Forward all events over webhook").clicked() {
+                            if let Ok(events) = self.database.get_events() {
+                                for event in events {
+                                    forward_event(
+                                        &self.rt,
+                                        self.client.clone(),
+                                        settings.clone(),
+                                        event,
+                                    );
+                                }
                             }
-                        }
-                    };
+                        };
+                    }
                 }
-            }
+            });
         });
     }
 }
@@ -510,7 +531,7 @@ fn shift_months(original_month: Month, raw_shift: i64) -> Month {
         .unwrap();
     if current_month_index == 0 && shift < 0 {
         current_month = Month::from_str(month_list[month_list.len() - 1]).unwrap()
-    } else if current_month_index+1 == month_list.len() && shift > 0 {
+    } else if current_month_index + 1 == month_list.len() && shift > 0 {
         current_month = Month::from_str(month_list[0]).unwrap()
     } else {
         if current_month_index as i64 + shift > 12 {
@@ -563,8 +584,24 @@ fn intersects_by_day(
     times: Vec<SimpleTimes>,
     comparison_time: DayTime,
     repeat_until_current_day: bool,
+    freeze_at_time: &Option<EventTime>,
 ) -> bool {
-    let date = chrono::offset::Local::now();
+    let date = {
+        let current_date = chrono::offset::Local::now();
+        if let Some(freeze_date) = freeze_at_time {
+            DayTime {
+                year: freeze_date.get_year(),
+                month: freeze_date.get_month(),
+                day: freeze_date.get_day(),
+            }
+        } else {
+            DayTime {
+                year: current_date.year() as u64,
+                month: get_month_by_index(current_date.month().try_into().unwrap()).unwrap(),
+                day: current_date.day() as u64,
+            }
+        }
+    };
     let mut intersects = false;
     for time in times.clone() {
         let mut compare_day = false;
@@ -615,11 +652,11 @@ fn intersects_by_day(
                 && comparison_time.day < final_time.day
                 && original_time.month == comparison_time.month
                 && original_time.year == comparison_time.year
-                && (!repeat_until_current_day
-                    || date.day() as u64 > comparison_time.day
-                        && original_time.month
-                            == get_month_by_index(date.month() as usize).unwrap()
-                        && original_time.year == date.year() as u64)
+                && ((!repeat_until_current_day && freeze_at_time.is_none())
+                    || (comparison_time.day <= date.day
+                        && comparison_time.month == date.month
+                        && comparison_time.year == date.year)
+                    || (comparison_time.month < date.month && comparison_time.year <= date.year))
             {
                 intersects = true;
             }
@@ -645,6 +682,7 @@ fn intersects_by_day(
                             )],
                             comparison_time.clone(),
                             repeat_until_current_day,
+                            freeze_at_time,
                         )
                     } else {
                         intersects = intersects_by_day(
@@ -657,6 +695,7 @@ fn intersects_by_day(
                             )],
                             comparison_time.clone(),
                             repeat_until_current_day,
+                            freeze_at_time,
                         )
                     }
                 } else {
@@ -673,20 +712,20 @@ fn intersects_by_day(
                         < get_month_index(comparison_time.month).unwrap())
                 && original_time.year == comparison_time.year
             {
-                if !repeat_until_current_day {
+                if !repeat_until_current_day && freeze_at_time.is_none() {
                     intersects = true;
                 } else {
-                    if (get_month_index(comparison_time.month).unwrap() + 1
-                        <= (date.month() as usize)
-                        && comparison_time.year <= date.year() as u64
+                    if (get_month_index(comparison_time.month).unwrap()
+                        <= (get_month_index(date.month).unwrap())
+                        && comparison_time.year <= date.year
                         && comparison_time.month >= original_time.month
                         && comparison_time.year >= original_time.year)
                     {
-                        if get_month_index(comparison_time.month).unwrap() + 1
-                            == (date.month() as usize)
-                            && comparison_time.year == date.year() as u64
+                        if get_month_index(comparison_time.month).unwrap()
+                            == get_month_index(date.month).unwrap()
+                            && comparison_time.year == date.year
                         {
-                            if (date.day() as u64) >= comparison_time.day {
+                            if (date.day) >= comparison_time.day {
                                 intersects = true;
                             }
                         } else {
@@ -698,16 +737,18 @@ fn intersects_by_day(
         }
     }
     if times.len() == 0 {
-        if repeat_until_current_day {
-            if (get_month_index(comparison_time.month).unwrap() + 1 <= (date.month() as usize)
-                && comparison_time.year <= date.year() as u64
+        if repeat_until_current_day || freeze_at_time.is_some() {
+            if (get_month_index(comparison_time.month).unwrap() + 1
+                <= get_month_index(date.month).unwrap()
+                && comparison_time.year <= date.year
                 && comparison_time.month >= original_time.month
                 && comparison_time.year >= original_time.year)
             {
-                if get_month_index(comparison_time.month).unwrap() + 1 == (date.month() as usize)
-                    && comparison_time.year == date.year() as u64
+                if get_month_index(comparison_time.month).unwrap() + 1
+                    == get_month_index(date.month).unwrap()
+                    && comparison_time.year == date.year
                 {
-                    if (date.day() as u64) >= comparison_time.day {
+                    if (date.day as u64) >= comparison_time.day {
                         intersects = true;
                     }
                 } else if comparison_time.day >= original_time.day {

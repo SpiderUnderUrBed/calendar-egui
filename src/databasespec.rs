@@ -203,6 +203,7 @@ pub struct Event {
     pub(crate) notify_times: Vec<SimpleTimes>,
     pub(crate) repeat_times: Vec<SimpleTimes>,
     pub(crate) repeat_until_current_day: bool,
+    pub(crate) freeze_at_time: Option<EventTime>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]

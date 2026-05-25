@@ -216,7 +216,7 @@ impl EventsDatabase for Database {
         let database = self.get_database()?;
         let events_that_day: Vec<Event> = database.events.iter().filter(|existing_events| 
             existing_events.time.clone().into_day_time() == time
-            || intersects_by_day(existing_events.time.clone().into_day_time() , existing_events.repeat_times.clone(), time.clone(), existing_events.repeat_until_current_day)
+            || intersects_by_day(existing_events.time.clone().into_day_time() , existing_events.repeat_times.clone(), time.clone(), existing_events.repeat_until_current_day, &existing_events.freeze_at_time.clone())
         ).cloned().collect();
         Ok(events_that_day)
     }

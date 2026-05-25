@@ -406,11 +406,12 @@ impl eframe::App for MyApp {
                         ui.horizontal(|ui| {
                             for day in all_days {
                                 ui.label(day);
-                                ui.add_space(32.0);
+                                ui.add_space(175.0);
                             }
                         });
                         for week in 0..days / 7 {
                             ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
+                                
                                 ui.horizontal(|ui| {
                                     for day in 1..8 {
                                         let full_day = week * 7 + day;
@@ -436,6 +437,7 @@ impl eframe::App for MyApp {
                         }
                         ui.horizontal(|ui| {
                             for remaining_days in (0..days % 7 + 1).rev() {
+                                
                                 egui::Frame::new()
                                     .fill(egui::Color32::from_rgb(0, 0, 0))
                                     .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
@@ -782,6 +784,7 @@ fn failure_frame(ui: &mut egui::Ui, text: String) -> egui::InnerResponse<egui::R
 }
 
 fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerResponse<()> {
+    ui.set_min_size(egui::vec2(175.0, 100.0));
     ui.vertical(|ui: &mut egui::Ui| {
         ui.label(day.to_string());
         if let Some(month_time) = &state.current_month {

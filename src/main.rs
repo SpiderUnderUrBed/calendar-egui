@@ -1,3 +1,4 @@
+use std::os::linux::raw;
 use std::str::FromStr;
 
 use chrono::Datelike;
@@ -7,6 +8,8 @@ use egui::LayerId;
 use egui::Order;
 use egui::Popup;
 use egui::PopupAnchor;
+use serde::Deserialize;
+use serde::Serialize;
 
 use crate::database::Database;
 use crate::databasespec::Event;
@@ -14,6 +17,7 @@ use crate::databasespec::EventTime;
 use crate::databasespec::EventsDatabase;
 use crate::databasespec::Settings;
 use crate::databasespec::SettingsDatabase;
+use crate::databasespec::SimpleTimes;
 
 mod databasespec;
 
@@ -23,11 +27,11 @@ mod database {
 
 use database::JsonBackend;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 struct DayTime {
-    year: u64,
-    month: Month,
-    day: u64,
+    pub(crate) year: u64,
+    pub(crate) month: Month,
+    pub(crate) day: u64,
 }
 
 #[derive(Clone)]
@@ -43,26 +47,34 @@ struct WorkingEvent {
     working_minute: String,
     working_name: String,
     working_desc: String,
-    working_notification_times: String
+    working_notification_times: String,
+    working_repeat_times: String,
+    working_update_repeat_for_current_day: bool,
 }
 impl Default for WorkingEvent {
     fn default() -> Self {
         let date = chrono::offset::Local::now();
         let year = date.year() as u64;
         let month = Month::try_from(u8::try_from(date.month()).unwrap()).unwrap();
-        Self { 
-            time: DayTime { year, month, day: 1 }, 
-            working_hour: Default::default(), 
-            working_minute: Default::default(), 
-            working_name: Default::default(), 
+        Self {
+            time: DayTime {
+                year,
+                month,
+                day: 1,
+            },
+            working_hour: Default::default(),
+            working_minute: Default::default(),
+            working_name: Default::default(),
             working_desc: Default::default(),
-            working_notification_times: Default::default(), 
+            working_notification_times: Default::default(),
+            working_repeat_times: Default::default(),
+            working_update_repeat_for_current_day: Default::default(),
         }
     }
 }
 
 fn main() -> eframe::Result {
-    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+    env_logger::init();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
         ..Default::default()
@@ -88,8 +100,8 @@ struct MyApp {
     current_month: Option<MonthTime>,
     working_settings: Settings,
     selected_date: Option<WorkingEvent>,
-    rt: tokio::runtime::Runtime, 
-    client: reqwest::Client
+    rt: tokio::runtime::Runtime,
+    client: reqwest::Client,
 }
 
 impl Default for MyApp {
@@ -102,14 +114,12 @@ impl Default for MyApp {
             working_settings: Settings::default(),
             selected_date: None,
             rt: tokio::runtime::Runtime::new().unwrap(),
-            client: reqwest::Client::new()
+            client: reqwest::Client::new(),
         }
     }
 }
 impl MyApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // let conn = first_connection()?;
-        // let database = database::Database::new(Some(conn));
         let database = {
             if let Ok(conn) = first_connection() {
                 database::Database::new(Some(conn))
@@ -117,6 +127,17 @@ impl MyApp {
                 database::Database::new(None)
             }
         };
+        // if let (Ok(settings), Ok(events)) = (self.database.get_settings(), self.database.get_events()) {
+        //     get_all_events_from_webhook(&self.rt, self.client, settings, events)
+        // }
+        let client = reqwest::Client::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        if let Ok(settings) = database.get_settings() {
+            if settings.enabled_webhooks {
+                get_all_events_from_webhook(&rt, client.clone(), database.clone());
+            }
+        }
+
         let _ = database.ensure_database_conn();
 
         let date = chrono::offset::Local::now();
@@ -133,28 +154,22 @@ impl MyApp {
             }),
             working_settings: database.get_settings().unwrap(),
             selected_date: None,
-            rt: tokio::runtime::Runtime::new().unwrap(),
-            client: reqwest::Client::new()
+            rt,
+            client,
         }
     }
 }
 
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        let month_list = vec!["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         let date = chrono::offset::Local::now();
         let date_month = Month::try_from(u8::try_from(date.month()).unwrap()).unwrap();
         let date_year = date.year() as u64;
-        // date.year()
-        // Year::try_from
         let year = self.current_month.clone().unwrap().year;
-        //date.year() as u64;
         let month = self.current_month.clone().unwrap().month;
-        //Month::try_from(u8::try_from(date.month()).unwrap()).unwrap();
-        // let month = Some(Month::September);
         let current_width = ui.available_width();
         let current_height = ui.available_width();
-        //self.show_events = false;
+
         Popup::new(
             "events".into(),
             ui.ctx().clone(),
@@ -165,19 +180,6 @@ impl eframe::App for MyApp {
         .show(|ui| {
             ui.set_height(300.0);
             ui.set_width(300.0);
-            // egui::Frame::new()
-            //     .show(ui, |ui| {
-            // if self.selected_date.is_none() {
-            //     self.selected_date = Some(WorkingEvent {
-            //         time: DayTime { year, month, day: 1 },
-            //         working_hour: String::new(),
-            //         working_minute: String::new(),
-            //         working_name: String::new(),
-            //         working_desc: String::new(),
-            //     });
-            // }
-            //let binding = &mut WorkingEvent::default();
-            //if self.show_events {}
             let selected_date = self.selected_date.as_mut().unwrap();
             egui::Frame::new()
                 .fill(egui::Color32::from_rgb(50, 50, 200))
@@ -185,7 +187,8 @@ impl eframe::App for MyApp {
                 .inner_margin(12.0)
                 .show(ui, |ui| {
                     ui.set_min_width(ui.available_width());
-                    if let Ok(events) = self.database.get_events_on_day(selected_date.time.clone()) {
+                    if let Ok(events) = self.database.get_events_on_day(selected_date.time.clone())
+                    {
                         for event in events {
                             egui::Frame::new()
                                 .fill(egui::Color32::from_rgb(0, 0, 0))
@@ -193,10 +196,20 @@ impl eframe::App for MyApp {
                                 .inner_margin(12.0)
                                 .show(ui, |ui| {
                                     ui.set_min_width(ui.available_width());
-                                    ui.label(event.name);
-                                    ui.label(event.description);
-                                    ui.label(format!("{}:{}", event.time.get_hour(), event.time.get_minute()));
-                                    if ui.button("Remove event").clicked(){
+                                    ui.label(event.clone().name);
+                                    ui.label(event.clone().description);
+                                    ui.label(format!(
+                                        "{}:{}",
+                                        event.clone().time.get_hour(),
+                                        event.clone().time.get_minute()
+                                    ));
+                                    if ui.button("Remove event").clicked() {
+                                        let cloned_event = event.clone();
+                                        if let Ok(settings) = self.database.get_settings() {
+                                            if settings.enabled_webhooks {
+                                                forward_remove_event(&self.rt, self.client.clone(), settings, cloned_event);
+                                            }
+                                        }
                                         let _ = self.database.remove_event_by_time(event.time);
                                     }
                                 });
@@ -216,6 +229,19 @@ impl eframe::App for MyApp {
                     ui.add(
                         egui::TextEdit::singleline(&mut selected_date.working_desc)
                             .hint_text("Type desc here..."),
+                    );
+                    ui.add_space(16.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut selected_date.working_notification_times)
+                            .hint_text("Type the amount of time (in units, e.g 1h, 1m), before the event, or 0, to get a notification..."),
+                    );
+                    ui.add(
+                        egui::TextEdit::singleline(&mut selected_date.working_repeat_times)
+                            .hint_text("Type how often this event should repeat, valid units are xd (days)..."),
+                    );
+                    ui.checkbox(
+                                &mut selected_date.working_update_repeat_for_current_day,
+                                "Repeat until it reaches the current day (updates)",
                     );
                     ui.add_space(16.0);
                     ui.horizontal(|ui| {
@@ -238,16 +264,10 @@ impl eframe::App for MyApp {
                     });
                     ui.add_space(16.0);
                     if ui.button("Add event").clicked() {
-                        //self.show_events = false;
-                        // if let Some(selected_date) = selected_date {
                         if let (Ok(working_hour), Ok(working_minute)) = (
                             &mut selected_date.working_hour.parse::<u64>(),
                             &mut selected_date.working_minute.parse::<u64>(),
                         ) {
-                            // let notify_times = selected_date.working_notification_times.trim().split(",").map(
-                            //     |time| {
-
-                            //     }).collect();
                             let event = Event {
                                 name: selected_date.working_name.clone(),
                                 description: selected_date.working_desc.clone(),
@@ -258,36 +278,27 @@ impl eframe::App for MyApp {
                                     *working_hour,
                                     *working_minute,
                                 ),
-                                notify_times: vec![],
+                                notify_times: parse_simple_times(&selected_date.working_notification_times),
+                                repeat_times: parse_simple_times(&selected_date.working_repeat_times),
+                                repeat_until_current_day: selected_date.working_update_repeat_for_current_day
                             };
                             let add_event_result = self.database.add_event(event.clone());
-                            if add_event_result.is_ok(){
-                                if let Ok(settings) = self.database.get_settings(){
+                            if add_event_result.is_ok() {
+                                if let Ok(settings) = self.database.get_settings() {
                                     forward_event(&self.rt, self.client.clone(), settings, event);
                                 }
-                                // if let Ok(settings) = self.database.get_settings(){
-                                //     if settings.enabled_websockets {
-                                //         // forward_event(&mut self, event);
-                                //     }
-                                // }
                             }
                         }
-                        //}
                     }
                 });
             ui.horizontal(|ui| {
-                // if ui.button("Save").clicked() {
-                //     self.show_events = false;
-                // }
                 if ui.button("Close").clicked() {
-                    //Popup::close_id(ui.ctx(), "events".into());
                     self.show_events = false;
                 }
             });
-            //});
         });
         if !self.show_settings {
-            if let Ok(settings) = self.database.get_settings(){
+            if let Ok(settings) = self.database.get_settings() {
                 self.working_settings = settings;
             }
         }
@@ -301,24 +312,35 @@ impl eframe::App for MyApp {
         .show(|ui| {
             ui.set_height(300.0);
             ui.set_width(300.0);
-            ui.checkbox(&mut self.working_settings.enabled_websockets, "Enable websocket forwarding");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.working_settings.websocket_url)
-                    .hint_text("Type websocket url..."),
+            ui.checkbox(
+                &mut self.working_settings.enabled_webhooks,
+                "Enable webhook forwarding",
             );
             ui.add(
-                egui::TextEdit::singleline(&mut self.working_settings.websocket_header)
-                    .hint_text("Type websocket authorization header..."),
+                egui::TextEdit::singleline(&mut self.working_settings.webhook_url_push)
+                    .hint_text("Type webhook url for individual events to be pushed to..."),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.working_settings.webhook_url_remove)
+                    .hint_text("Type webhook url for individual events to be removed to..."),
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.working_settings.webhook_url_all)
+                    .hint_text("Type webhook url to merge/override events with..."),
+            );
+            ui.checkbox(
+                &mut self.working_settings.override_local_webhook,
+                "Override local events with fetched events",
+            );
+            ui.add(
+                egui::TextEdit::singleline(&mut self.working_settings.webhook_header)
+                    .hint_text("Type webhook authorization header..."),
             );
             ui.horizontal(|ui| {
-                // if ui.button("Save").clicked() {
-                //     self.show_events = false;
-                // }
                 if ui.button("Save").clicked() {
                     let _ = self.database.set_settings(self.working_settings.clone());
                 }
                 if ui.button("Close").clicked() {
-                    //Popup::close_id(ui.ctx(), "events".into());
                     self.working_settings = Settings::default();
                     self.show_settings = false;
                 }
@@ -326,185 +348,403 @@ impl eframe::App for MyApp {
         });
         egui::TopBottomPanel::top("menu_bar").show_inside(ui, |ui| {
             egui::menu::bar(ui, |ui| {
-                if ui.button("Configure settings").clicked(){
+                if ui.button("Configure settings").clicked() {
                     self.show_settings = true;
                 }
             })
         });
-        //if let Some(month) = month {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.heading("Egui calendar");
             let days: u64 = get_days_in_month_chrono("", month);
-            //println!("{}", days);
-            // println!("{} {}", days, days/7);
-            // let size = egui::vec2(200.0, 100.0);
-            //egui::Frame::new().show(ui, |ui| {
-            // ui.set_min_size(egui::vec2(20.0, 20.0));
             ui.horizontal(|ui| {
                 if ui.button("<").clicked() {
-                    let month_name = self.current_month.clone().unwrap().month.name();
-                    let current_month_index = month_list.iter().position(|current_month| *current_month == month_name).unwrap();
-                    if current_month_index == 0 {
-                        self.current_month.as_mut().unwrap().month = Month::from_str(month_list[month_list.len()-1]).unwrap()  
-                    } else {
-                        self.current_month.as_mut().unwrap().month = Month::from_str(month_list[current_month_index-1]).unwrap()
-                    }
+                    self.current_month.as_mut().unwrap().month =
+                        shift_months(self.current_month.clone().unwrap().month, -1)
                 }
                 ui.label(month.name());
                 if ui.button(">").clicked() {
-                    let month_name = self.current_month.clone().unwrap().month.name();
-                    let current_month_index = month_list.iter().position(|current_month| *current_month == month_name).unwrap();
-                    if current_month_index+1 == month_list.len(){
-                        self.current_month.as_mut().unwrap().month = Month::from_str(month_list[0]).unwrap()  
-                    } else {
-                        self.current_month.as_mut().unwrap().month = Month::from_str(month_list[current_month_index+1]).unwrap()  
-                    } 
+                    self.current_month.as_mut().unwrap().month =
+                        shift_months(self.current_month.clone().unwrap().month, 1)
                 }
                 ui.add_space(16.0);
                 if ui.button("<").clicked() {
-                    self.current_month.as_mut().unwrap().year = self.current_month.clone().unwrap().year-1;
+                    self.current_month.as_mut().unwrap().year =
+                        self.current_month.clone().unwrap().year - 1;
                 }
                 ui.label(year.to_string());
                 if ui.button(">").clicked() {
-                    self.current_month.as_mut().unwrap().year = self.current_month.clone().unwrap().year+1;
+                    self.current_month.as_mut().unwrap().year =
+                        self.current_month.clone().unwrap().year + 1;
                 }
             });
-            egui::Grid::new("date_grid")
-                //.min_col_width(100.0)
-                .show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        for week in 0..days / 7 {
-                            ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
-                                ui.horizontal(|ui| {
-                                    for day in 0..7 {
-                                        let full_day = week * 7 + day;
-                                        let is_current_period = self.current_month.clone().unwrap().month == date_month && self.current_month.clone().unwrap().year == date_year;
-                                        let is_current_day = u32::try_from(full_day).unwrap() == date.day();
-                                        //println!("{} {} {}", u32::try_from(full_day).unwrap(), date.day(), is_current_day);
-                                        egui::Frame::new()
-                                            .fill(if is_current_day && is_current_period {
-                                                egui::Color32::from_rgb(255, 255, 0)
-                                            } else {
-                                                egui::Color32::from_rgb(0, 0, 0)
-                                            })
-                                            .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                                            .inner_margin(12.0)
-                                            .show(ui, |ui| date_cell(self, ui, full_day));
-                                        ui.end_row();
-                                    }
-                                });
+            egui::Grid::new("date_grid").show(ui, |ui| {
+                ui.vertical(|ui| {
+                    for week in 0..days / 7 {
+                        ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
+                            ui.horizontal(|ui| {
+                                for day in 0..7 {
+                                    let full_day = week * 7 + day;
+                                    let is_current_period =
+                                        self.current_month.clone().unwrap().month == date_month
+                                            && self.current_month.clone().unwrap().year
+                                                == date_year;
+                                    let is_current_day =
+                                        u32::try_from(full_day).unwrap() == date.day();
+                                    egui::Frame::new()
+                                        .fill(if is_current_day && is_current_period {
+                                            egui::Color32::from_rgb(255, 255, 0)
+                                        } else {
+                                            egui::Color32::from_rgb(0, 0, 0)
+                                        })
+                                        .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+                                        .inner_margin(12.0)
+                                        .show(ui, |ui| date_cell(self, ui, full_day));
+                                    ui.end_row();
+                                }
                             });
-                        }
-                        //days
-                        ui.horizontal(|ui| {
-                            for remaining_days in (0..days % 7 + 1).rev() {
-                                egui::Frame::new()
-                                    .fill(egui::Color32::from_rgb(0, 0, 0))
-                                    .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                                    .inner_margin(12.0)
-                                    .show(ui, |ui| {
-                                        let full_day = days - remaining_days;
-                                        let is_current_period = self.current_month.clone().unwrap().month == date_month && self.current_month.clone().unwrap().year == date_year;
-                                        let is_current_day = u32::try_from(full_day).unwrap() == date.day();
-                                        //println!("{} {} {}", u32::try_from(full_day).unwrap(), date.day(), is_current_day);
-                                        egui::Frame::new()
-                                            .fill(if is_current_day && is_current_period{
-                                                egui::Color32::from_rgb(255, 255, 0)
-                                            } else {
-                                                egui::Color32::from_rgb(0, 0, 0)
-                                            })
-                                            // .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                                            // .inner_margin(12.0)
-                                            .show(ui, |ui| date_cell(self, ui, full_day));
-                                        ui.end_row();
-                                        // ui.vertical(|ui| {
-                                        //     ui.label(
-                                        //         (days - remaining_days).to_string(),
-                                        //     );
-                                        //     ui.button("Edit");
-                                        //     ui.button("Veiw events");
-                                        // })
-                                    });
-                            }
                         });
+                    }
+                    ui.horizontal(|ui| {
+                        for remaining_days in (0..days % 7 + 1).rev() {
+                            egui::Frame::new()
+                                .fill(egui::Color32::from_rgb(0, 0, 0))
+                                .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+                                .inner_margin(12.0)
+                                .show(ui, |ui| {
+                                    let full_day = days - remaining_days;
+                                    let is_current_period =
+                                        self.current_month.clone().unwrap().month == date_month
+                                            && self.current_month.clone().unwrap().year
+                                                == date_year;
+                                    let is_current_day =
+                                        u32::try_from(full_day).unwrap() == date.day();
+                                    egui::Frame::new()
+                                        .fill(if is_current_day && is_current_period {
+                                            egui::Color32::from_rgb(255, 255, 0)
+                                        } else {
+                                            egui::Color32::from_rgb(0, 0, 0)
+                                        })
+                                        .show(ui, |ui| date_cell(self, ui, full_day));
+                                    ui.end_row();
+                                });
+                        }
                     });
                 });
+            });
             if let Ok(settings) = self.database.get_settings() {
-                if settings.enabled_websockets {
-                    if ui.button("Forward all events over websocket").clicked() {
-                        if let Ok(events) = self.database.get_events(){
+                if settings.enabled_webhooks {
+                    if ui.button("Forward all events over webhook").clicked() {
+                        if let Ok(events) = self.database.get_events() {
                             for event in events {
-                                forward_event(&self.rt, self.client.clone(), settings.clone(), event);
+                                forward_event(
+                                    &self.rt,
+                                    self.client.clone(),
+                                    settings.clone(),
+                                    event,
+                                );
                             }
                         }
                     };
                 }
             }
-            //})
-            // ui.heading("My egui Application");
-            // ui.horizontal(|ui| {
-            //     let name_label = ui.label("Your name: ");
-            //     ui.text_edit_singleline(&mut self.name)
-            //         .labelled_by(name_label.id);
-            // });
-            // ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));
-            // if ui.button("Increment").clicked() {
-            //     self.age += 1;
-            // }
-            // ui.label(format!("Hello '{}', age {}", self.name, self.age));
         });
-        //}
     }
 }
+fn parse_simple_times(times: &str) -> Vec<SimpleTimes> {
+    if times.len() > 0 {
+        let mut total_times = Vec::new();
+        for time in times.split(",") {
+            let mut letters = time.chars();
+            let last_letter = letters.next_back().unwrap();
+            let amount = letters.as_str().parse::<u64>().unwrap();
+            total_times.push(match last_letter {
+                'y' => SimpleTimes::Year(amount),
+                'm' => SimpleTimes::Month(amount),
+                'w' => SimpleTimes::Week(amount),
+                'd' => SimpleTimes::Day(amount),
+                'h' => SimpleTimes::Hour(amount),
+                'm' => SimpleTimes::Minuite(amount),
+                _ => SimpleTimes::None,
+            });
+        }
+        total_times
+    } else {
+        vec![]
+    }
+}
+fn shift_months(original_month: Month, raw_shift: i64) -> Month {
+    let mut shift = {
+        if raw_shift > 12 {
+            raw_shift % 12
+        } else {
+            raw_shift
+        }
+    };
+    let month_list = vec![
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    let month_name = original_month.name();
+    let mut current_month = Month::January;
+    let current_month_index = month_list
+        .iter()
+        .position(|current_month| *current_month == month_name)
+        .unwrap();
+    if current_month_index == 0 && shift < 0 {
+        current_month = Month::from_str(month_list[month_list.len() - 1]).unwrap()
+    } else if current_month_index+1 == month_list.len() && shift > 0 {
+        current_month = Month::from_str(month_list[0]).unwrap()
+    } else {
+        if current_month_index as i64 + shift > 12 {
+            shift = (current_month_index as i64 + shift) % 12;
+        } else {
+            shift = current_month_index as i64 + shift;
+        }
+        current_month = Month::from_str(month_list[shift as usize]).unwrap()
+    }
+    current_month
+}
+fn get_month_index(month: Month) -> Option<usize> {
+    let month_list = vec![
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    month_list
+        .iter()
+        .position(|current_month| *current_month == month.name())
+}
+fn get_month_by_index(index: usize) -> Result<Month, chrono::ParseMonthError> {
+    let month_list = vec![
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    Month::from_str(month_list[index - 1])
+}
+fn intersects_by_day(
+    original_time: DayTime,
+    times: Vec<SimpleTimes>,
+    comparison_time: DayTime,
+    repeat_until_current_day: bool,
+) -> bool {
+    let date = chrono::offset::Local::now();
+    let mut intersects = false;
+    for time in times.clone() {
+        let mut compare_day = false;
+        let mut compare_month = false;
+        let mut compare_year = false;
+        let final_time = match time {
+            SimpleTimes::Year(y) => {
+                compare_year = true;
+                DayTime {
+                    year: original_time.year + y,
+                    month: original_time.month,
+                    day: original_time.day,
+                }
+            }
+            SimpleTimes::Month(m) => {
+                compare_month = true;
+                DayTime {
+                    year: original_time.year,
+                    month: shift_months(original_time.month, m.try_into().unwrap()),
+                    day: original_time.day,
+                }
+            }
+            SimpleTimes::Week(w) => {
+                compare_day = true;
+                DayTime {
+                    year: original_time.year,
+                    month: original_time.month,
+                    day: original_time.day + (w * 7),
+                }
+            }
+            SimpleTimes::Day(d) => {
+                compare_day = true;
+                DayTime {
+                    year: original_time.year,
+                    month: original_time.month,
+                    day: original_time.day + d,
+                }
+            }
+            _ => DayTime {
+                year: original_time.year,
+                month: original_time.month,
+                day: original_time.day,
+            },
+        };
+
+        if compare_day {
+            if comparison_time.day > original_time.day
+                && comparison_time.day < final_time.day
+                && original_time.month == comparison_time.month
+                && original_time.year == comparison_time.year
+                && (!repeat_until_current_day
+                    || date.day() as u64 > comparison_time.day
+                        && original_time.month
+                            == get_month_by_index(date.month() as usize).unwrap()
+                        && original_time.year == date.year() as u64)
+            {
+                intersects = true;
+            }
+        } else if compare_year {
+            if (original_time.year <= comparison_time.year
+                && final_time.year >= comparison_time.year)
+            {
+                if final_time.year == comparison_time.year
+                    || original_time.year == comparison_time.year
+                {
+                    if final_time.year == comparison_time.year {
+                        intersects = !intersects_by_day(
+                            DayTime {
+                                year: final_time.year,
+                                month: final_time.month,
+                                day: final_time.day - 1,
+                            },
+                            vec![SimpleTimes::Month(
+                                get_month_index(final_time.month)
+                                    .unwrap()
+                                    .try_into()
+                                    .unwrap(),
+                            )],
+                            comparison_time.clone(),
+                            repeat_until_current_day,
+                        )
+                    } else {
+                        intersects = intersects_by_day(
+                            original_time.clone(),
+                            vec![SimpleTimes::Month(
+                                get_month_index(final_time.month)
+                                    .unwrap()
+                                    .try_into()
+                                    .unwrap(),
+                            )],
+                            comparison_time.clone(),
+                            repeat_until_current_day,
+                        )
+                    }
+                } else {
+                    intersects = true;
+                }
+            }
+        } else if compare_month {
+            if (((final_time.day < comparison_time.day
+                && original_time.month == comparison_time.month)
+                || (final_time.day > comparison_time.day
+                    && final_time.month == comparison_time.month))
+                || (final_time.month != comparison_time.month)
+                    && get_month_index(original_time.month).unwrap()
+                        < get_month_index(comparison_time.month).unwrap())
+                && original_time.year == comparison_time.year
+            {
+                if !repeat_until_current_day {
+                    intersects = true;
+                } else {
+                    if (get_month_index(comparison_time.month).unwrap() + 1
+                        <= (date.month() as usize)
+                        && comparison_time.year <= date.year() as u64
+                        && comparison_time.month >= original_time.month
+                        && comparison_time.year >= original_time.year)
+                    {
+                        if get_month_index(comparison_time.month).unwrap() + 1
+                            == (date.month() as usize)
+                            && comparison_time.year == date.year() as u64
+                        {
+                            if (date.day() as u64) >= comparison_time.day {
+                                intersects = true;
+                            }
+                        } else {
+                            intersects = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if times.len() == 0 {
+        if repeat_until_current_day {
+            if (get_month_index(comparison_time.month).unwrap() + 1 <= (date.month() as usize)
+                && comparison_time.year <= date.year() as u64
+                && comparison_time.month >= original_time.month
+                && comparison_time.year >= original_time.year)
+            {
+                if get_month_index(comparison_time.month).unwrap() + 1 == (date.month() as usize)
+                    && comparison_time.year == date.year() as u64
+                {
+                    if (date.day() as u64) >= comparison_time.day {
+                        intersects = true;
+                    }
+                } else if comparison_time.day >= original_time.day {
+                    intersects = true;
+                }
+            }
+        }
+    }
+    intersects
+}
+
 fn success_frame(ui: &mut egui::Ui, text: String) -> egui::InnerResponse<egui::Response> {
     egui::Frame::new()
-    .fill(egui::Color32::from_rgb(0, 0, 0))
-    .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-    .inner_margin(12.0)
-    .show(ui, |ui| {
-        ui.label(text)
-    })
+        .fill(egui::Color32::from_rgb(0, 0, 0))
+        .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+        .inner_margin(12.0)
+        .show(ui, |ui| ui.label(text))
 }
 fn failure_frame(ui: &mut egui::Ui, text: String) -> egui::InnerResponse<egui::Response> {
     egui::Frame::new()
-    .fill(egui::Color32::from_rgb(0, 0, 0))
-    .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-    .inner_margin(12.0)
-    .show(ui, |ui| {
-        ui.label(text)
-    })
+        .fill(egui::Color32::from_rgb(0, 0, 0))
+        .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+        .inner_margin(12.0)
+        .show(ui, |ui| ui.label(text))
 }
 
 fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerResponse<()> {
     ui.vertical(|ui: &mut egui::Ui| {
         ui.label(day.to_string());
         if let Some(month_time) = &state.current_month {
-        let day_time = DayTime {
-                        year: month_time.year,
-                        month: month_time.month,
-                        day,
-                    };
-        // println!("{}", highlight);
-        // let color = {
-        //     if highlight {
-        //         egui::Color32::from_rgb(255, 255, 0)
-        //     } else {
-        //         egui::Color32::from_rgb(0, 0, 0)
-        //     }
-        // };
-        if let Ok(events) = state.database.get_events_on_day(day_time.clone()) {
-            for event in events {
-                egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(0, 0, 0))
-                    .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                    .inner_margin(12.0)
-                    .show(ui, |ui| {
-                        ui.label(event.name)
-                    });
+            let day_time = DayTime {
+                year: month_time.year,
+                month: month_time.month,
+                day,
+            };
+            if let Ok(events) = state.database.get_events_on_day(day_time.clone()) {
+                for event in events {
+                    egui::Frame::new()
+                        .fill(egui::Color32::from_rgb(0, 0, 0))
+                        .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+                        .inner_margin(12.0)
+                        .show(ui, |ui| ui.label(event.name));
+                }
             }
-        }
-        if ui.button("Events").clicked() {
-            
+            if ui.button("Events").clicked() {
                 state.selected_date = Some(WorkingEvent {
                     time: day_time,
                     working_hour: String::new(),
@@ -512,12 +752,12 @@ fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerRespo
                     working_desc: String::new(),
                     working_name: String::new(),
                     working_notification_times: String::new(),
+                    working_repeat_times: String::new(),
+                    working_update_repeat_for_current_day: false,
                 });
                 state.show_events = true;
             }
         }
-        // if ui.button("Veiw events").clicked() {
-        // }
     })
 }
 
@@ -555,21 +795,79 @@ fn get_days_in_month_string(year: &str, month: &str) -> Option<u64> {
         _ => None,
     }
 }
-fn forward_event(rt: &tokio::runtime::Runtime, client: reqwest::Client, settings: Settings, event: Event) {
+
+#[derive(Deserialize, Serialize)]
+struct EventsRequest {
+    events: Vec<Event>,
+}
+#[derive(Deserialize, Serialize)]
+struct RemoveEventRequest {
+    event_name: String,
+}
+
+fn get_all_events_from_webhook(
+    rt: &tokio::runtime::Runtime,
+    client: reqwest::Client,
+    database: database::Database,
+    // settings: Settings,
+    // events: Vec<Event>,
+) {
+    if let (Ok(settings), Ok(mut events)) = (database.get_settings(), database.get_events()) {
+        rt.spawn(async move {
+            let response = client
+                .get(&settings.webhook_url_all)
+                .header("authorization", &settings.webhook_header)
+                .send()
+                .await
+                .unwrap();
+            if response.status().is_success() {
+                match response.json::<EventsRequest>().await {
+                    Ok(body) => {
+                        if !&settings.override_local_webhook {
+                            events.extend(body.events);
+                            let _ = database.set_events(events);
+                        } else {
+                            let _ = database.set_events(body.events);
+                        }
+                    }
+                    Err(err) => {}
+                }
+            } else {
+                eprintln!("request failed: {}", response.status());
+            }
+        });
+    }
+}
+fn forward_remove_event(
+    rt: &tokio::runtime::Runtime,
+    client: reqwest::Client,
+    settings: Settings,
+    event: Event,
+) {
     rt.spawn(async move {
         let _ = client
-            .post(&settings.websocket_url)
-            .header("authorization", &settings.websocket_header)
+            .post(&settings.webhook_url_remove)
+            .header("authorization", &settings.webhook_header)
+            .json(&RemoveEventRequest {
+                event_name: event.name,
+            })
+            .send()
+            .await;
+    });
+}
+
+fn forward_event(
+    rt: &tokio::runtime::Runtime,
+    client: reqwest::Client,
+    settings: Settings,
+    event: Event,
+) {
+    rt.spawn(async move {
+        let _ = client
+            .post(&settings.webhook_url_all)
+            .header("authorization", &settings.webhook_header)
             .json(&event)
             .send()
             .await;
     });
 }
-//    egui::Frame::new()
-//             .fill(egui::Color32::from_rgb(50, 50, 200))
-//             .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-//             .inner_margin(12.0)
-//             .show(ui, |ui| {
-//                 ui.label("Hello inside a square!");
-//                 ui.button("Click me");
-//             });

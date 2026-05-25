@@ -28,7 +28,9 @@ pub enum SimpleTimes {
     Week(u64),
     Day(u64),
     Hour(u64),
-    Minuite(u64)
+    Minuite(u64),
+    Stop(Box<SimpleTimes>),
+    None,
 }
 // impl From<&str> for SimpleTimes {
 //     fn from(value: &str) -> Self {
@@ -63,21 +65,21 @@ impl Into<String> for SerializeableMonth {
 }
 impl From<&str> for SerializeableMonth {
     fn from(value: &str) -> Self {
-       match value {
-        "January" => SerializeableMonth::January,
-        "February" => SerializeableMonth::February,
-        "March"  => SerializeableMonth::March,
-        "April" => SerializeableMonth::April,
-        "May" => SerializeableMonth::May,
-        "June" => SerializeableMonth::June,
-        "July" => SerializeableMonth::July,
-        "August" => SerializeableMonth::August,
-        "September" => SerializeableMonth::September,
-        "October" => SerializeableMonth::October,
-        "November" => SerializeableMonth::November,
-        "December"  => SerializeableMonth::December,
-        _ => SerializeableMonth::January
-       }
+        match value {
+            "January" => SerializeableMonth::January,
+            "February" => SerializeableMonth::February,
+            "March" => SerializeableMonth::March,
+            "April" => SerializeableMonth::April,
+            "May" => SerializeableMonth::May,
+            "June" => SerializeableMonth::June,
+            "July" => SerializeableMonth::July,
+            "August" => SerializeableMonth::August,
+            "September" => SerializeableMonth::September,
+            "October" => SerializeableMonth::October,
+            "November" => SerializeableMonth::November,
+            "December" => SerializeableMonth::December,
+            _ => SerializeableMonth::January,
+        }
     }
 }
 impl Into<Month> for SerializeableMonth {
@@ -109,10 +111,10 @@ pub struct EventTime {
 }
 impl Into<DayTime> for EventTime {
     fn into(self) -> DayTime {
-        DayTime { 
-            year: self.get_year(), 
-            month: self.get_month(), 
-            day: self.get_day() 
+        DayTime {
+            year: self.get_year(),
+            month: self.get_month(),
+            day: self.get_day(),
         }
     }
 }
@@ -198,19 +200,25 @@ pub struct Event {
     pub(crate) name: String,
     pub(crate) description: String,
     pub(crate) time: EventTime,
-    pub(crate) notify_times: Vec<SimpleTimes>
+    pub(crate) notify_times: Vec<SimpleTimes>,
+    pub(crate) repeat_times: Vec<SimpleTimes>,
+    pub(crate) repeat_until_current_day: bool,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct Settings {
-    pub(crate) enabled_websockets: bool,
-    pub(crate) websocket_url: String,
-    pub(crate) websocket_header: String,
+    pub(crate) enabled_webhooks: bool,
+    pub(crate) webhook_url_push: String,
+    pub(crate) webhook_url_all: String,
+    pub(crate) override_local_webhook: bool,
+    pub(crate) webhook_url_remove: String,
+    pub(crate) webhook_header: String,
 }
 
 pub trait EventsDatabase {
     fn add_event(&self, event: Event) -> Result<(), Box<dyn Error>>;
     fn remove_event_by_name(&self, event_name: String) -> Result<(), Box<dyn Error>>;
+    fn set_events(&self, events: Vec<Event>) -> Result<(), Box<dyn Error>>;
     fn get_events(&self) -> Result<Vec<Event>, Box<dyn Error>>;
     fn get_events_on_day(&self, time: DayTime) -> Result<Vec<Event>, Box<dyn Error>>;
     fn remove_event_by_time(&self, time: EventTime) -> Result<(), Box<dyn Error>>;

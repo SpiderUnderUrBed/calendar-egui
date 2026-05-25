@@ -162,6 +162,8 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let all_days = vec!["Monday", "Tuesday", "Wensday", "Thursday", "Friday", "Saturday", "Sunday"];
+
         let date = chrono::offset::Local::now();
         let date_month = Month::try_from(u8::try_from(date.month()).unwrap()).unwrap();
         let date_year = date.year() as u64;
@@ -379,10 +381,16 @@ impl eframe::App for MyApp {
             });
             egui::Grid::new("date_grid").show(ui, |ui| {
                 ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                    for day in all_days {
+                        ui.label(day);
+                        ui.add_space(32.0);
+                    }
+                });
                     for week in 0..days / 7 {
                         ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
                             ui.horizontal(|ui| {
-                                for day in 0..7 {
+                                for day in 1..8 {
                                     let full_day = week * 7 + day;
                                     let is_current_period =
                                         self.current_month.clone().unwrap().month == date_month

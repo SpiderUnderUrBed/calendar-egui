@@ -436,7 +436,7 @@ impl eframe::App for MyApp {
                             });
                         }
                         ui.horizontal(|ui| {
-                            for remaining_days in (0..days % 7 + 1).rev() {
+                            for remaining_days in (0..days % 7).rev() {
                                 
                                 egui::Frame::new()
                                     .fill(egui::Color32::from_rgb(0, 0, 0))

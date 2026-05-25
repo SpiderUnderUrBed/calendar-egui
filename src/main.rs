@@ -386,7 +386,7 @@ impl eframe::App for MyApp {
                     self.current_month.clone().unwrap().year,
                     get_month_index(self.current_month.clone().unwrap().month).unwrap() as u64 + 1,
                 );
-                let days: u64 = get_days_in_month_chrono("", month) + offset;
+                let days: u64 = get_days_in_month_chrono("", month);
                 ui.horizontal(|ui| {
                     if ui.button("<").clicked() {
                         self.current_month.as_mut().unwrap().month =

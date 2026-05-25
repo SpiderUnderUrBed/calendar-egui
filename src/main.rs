@@ -194,6 +194,7 @@ impl eframe::App for MyApp {
                     ui.set_min_width(ui.available_width());
                     if let Ok(events) = self.database.get_events_on_day(selected_date.time.clone())
                     {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
                         for event in events {
                             egui::Frame::new()
                                 .fill(egui::Color32::from_rgb(0, 0, 0))
@@ -234,6 +235,7 @@ impl eframe::App for MyApp {
                                     }
                                 });
                         }
+                    });
                     }
                 });
 

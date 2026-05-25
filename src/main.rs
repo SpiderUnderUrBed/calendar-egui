@@ -382,7 +382,7 @@ impl eframe::App for MyApp {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.heading("Egui calendar");
-                let offset = month_start_offset(
+                let mut offset = month_start_offset(
                     self.current_month.clone().unwrap().year,
                     get_month_index(self.current_month.clone().unwrap().month).unwrap() as u64 + 1,
                 );
@@ -416,11 +416,16 @@ impl eframe::App for MyApp {
                                 ui.add_space(175.0);
                             }
                         });
-                        for week in 0..days / 7 {
+
+                        let total_cells = offset + days;
+                        let total_rows = (total_cells + 6) / 7;
+
+                        for row in 0..total_rows {
                             ui.allocate_ui(egui::vec2(current_width, current_height), |ui| {
                                 ui.horizontal(|ui| {
-                                    if week == 0 {
-                                        for _ in 0..offset {
+                                    for col in 0..7 {
+                                        let cell = row * 7 + col;
+                                        if cell < offset || cell >= total_cells {
                                             egui::Frame::new()
                                                 .fill(egui::Color32::from_rgb(0, 0, 0))
                                                 .stroke(egui::Stroke::new(
@@ -431,74 +436,34 @@ impl eframe::App for MyApp {
                                                 .show(ui, |ui| {
                                                     ui.set_min_size(egui::vec2(175.0, 175.0));
                                                 });
-                                        }
-                                    }
-                                    for day in 1..8 {
-                                        if day >= offset && week == 0 {
-                                            break;
-                                        }
-                                        let full_day = week * 7 + day;
-                                        let is_current_period =
-                                            self.current_month.clone().unwrap().month == date_month
-                                                && self.current_month.clone().unwrap().year
-                                                    == date_year;
-                                        let is_current_day = u32::try_from(full_day).unwrap()
-                                            == date.day() + offset as u32;
-                                        egui::Frame::new()
-                                            .fill(if is_current_day && is_current_period {
-                                                egui::Color32::from_rgb(255, 255, 0)
-                                            } else {
-                                                egui::Color32::from_rgb(0, 0, 0)
-                                            })
-                                            .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                                            .inner_margin(12.0)
-                                            .show(ui, |ui| {
-                                                date_cell(self, ui, {
-                                                    if full_day.checked_sub(offset).is_some() {
-                                                        full_day - offset
-                                                    } else {
-                                                        full_day
-                                                    }
+                                        } else {
+                                            let day_num = cell - offset + 1;
+                                            let is_current_period =
+                                                self.current_month.clone().unwrap().month
+                                                    == date_month
+                                                    && self.current_month.clone().unwrap().year
+                                                        == date_year;
+                                            let is_current_day =
+                                                is_current_period && day_num == date.day() as u64;
+                                            egui::Frame::new()
+                                                .fill(if is_current_day {
+                                                    egui::Color32::from_rgb(255, 255, 0)
+                                                } else {
+                                                    egui::Color32::from_rgb(0, 0, 0)
                                                 })
-                                            });
-                                        ui.end_row();
+                                                .stroke(egui::Stroke::new(
+                                                    2.0,
+                                                    egui::Color32::WHITE,
+                                                ))
+                                                .inner_margin(12.0)
+                                                .show(ui, |ui| {
+                                                    date_cell(self, ui, day_num);
+                                                });
+                                        }
                                     }
                                 });
                             });
                         }
-                        ui.horizontal(|ui| {
-                            for remaining_days in (0..days % 7).rev() {
-                                egui::Frame::new()
-                                    .fill(egui::Color32::from_rgb(0, 0, 0))
-                                    .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
-                                    .inner_margin(12.0)
-                                    .show(ui, |ui| {
-                                        let full_day = days - remaining_days;
-                                        let is_current_period =
-                                            self.current_month.clone().unwrap().month == date_month
-                                                && self.current_month.clone().unwrap().year
-                                                    == date_year;
-                                        let is_current_day = u32::try_from(full_day).unwrap()
-                                            == date.day() + offset as u32;
-                                        egui::Frame::new()
-                                            .fill(if is_current_day && is_current_period {
-                                                egui::Color32::from_rgb(255, 255, 0)
-                                            } else {
-                                                egui::Color32::from_rgb(0, 0, 0)
-                                            })
-                                            .show(ui, |ui| {
-                                                date_cell(self, ui, {
-                                                    if full_day.checked_sub(offset).is_some() {
-                                                        full_day - offset
-                                                    } else {
-                                                        full_day
-                                                    }
-                                                })
-                                            });
-                                        ui.end_row();
-                                    });
-                            }
-                        });
                     });
                 });
                 if let Ok(settings) = self.database.get_settings() {
@@ -861,6 +826,11 @@ fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerRespo
             }
         }
     })
+}
+fn days_in_first_week(year: u64, month: u64) -> u64 {
+    let first_day = NaiveDate::from_ymd_opt(year as i32, month as u32, 1).unwrap();
+    let weekday = first_day.weekday().num_days_from_monday();
+    7 - weekday as u64
 }
 fn month_start_offset(year: u64, month: u64) -> u64 {
     NaiveDate::from_ymd_opt(year as i32, month as u32, 1)

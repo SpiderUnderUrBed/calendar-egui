@@ -11,17 +11,21 @@ use egui::LayerId;
 use egui::Order;
 use egui::Popup;
 use egui::PopupAnchor;
+use egui::vec2;
 use rand::RngExt;
 use serde::Deserialize;
 use serde::Serialize;
 
 use crate::database::Database;
+use crate::database::create_backend_with_string;
 use crate::databasespec::Event;
 use crate::databasespec::EventTime;
 use crate::databasespec::EventsDatabase;
 use crate::databasespec::Settings;
 use crate::databasespec::SettingsDatabase;
 use crate::databasespec::SimpleTimes;
+
+use directories::ProjectDirs;
 
 mod databasespec;
 
@@ -79,8 +83,23 @@ impl Default for WorkingEvent {
 
 fn main() -> eframe::Result {
     env_logger::init();
+    let icon_image = image::load_from_memory(include_bytes!("../assets/calendar-rs-v1.png"))
+        .unwrap()
+        .to_rgba8();
+    let (icon_width, icon_height) = icon_image.dimensions();
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        viewport: egui::ViewportBuilder {
+            title: Some("calendar-rs-egui".to_string()),
+            app_id: Some("calendar-rs-egui".to_string()),
+            inner_size: Some(vec2(320.0, 240.0)),
+            icon: Some(std::sync::Arc::new(egui::IconData {
+                rgba: icon_image.to_vec(),
+                width: icon_width,
+                height: icon_height,
+            })),
+            ..Default::default()
+        },
         ..Default::default()
     };
     eframe::run_native(
@@ -99,6 +118,7 @@ fn first_connection() -> Result<JsonBackend, String> {
 
 struct MyApp {
     database: database::Database,
+    working_database_file: Option<String>,
     show_events: bool,
     show_settings: bool,
     current_month: Option<MonthTime>,
@@ -112,6 +132,7 @@ impl Default for MyApp {
     fn default() -> Self {
         Self {
             database: Database::new(None),
+            working_database_file: None,
             show_events: false,
             show_settings: false,
             current_month: None,
@@ -124,7 +145,14 @@ impl Default for MyApp {
 }
 impl MyApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let database = {
+        let database = 'database: {
+            if let Some(proj_dirs) = ProjectDirs::from("", "", "calendar-rs-egui") {
+                // let config_dir = proj_dirs.config_dir(); 
+                let data_dir = proj_dirs.data_dir().to_string_lossy();
+                if let Ok(conn) = create_backend_with_string(format!("{data_dir}/database.json")) {
+                    break 'database database::Database::new(Some(conn)) 
+                }
+            } 
             if let Ok(conn) = first_connection() {
                 database::Database::new(Some(conn))
             } else {
@@ -150,6 +178,7 @@ impl MyApp {
 
         Self {
             database: database.clone(),
+            working_database_file: None,
             show_events: false,
             show_settings: false,
             current_month: Some(MonthTime {
@@ -362,12 +391,30 @@ impl eframe::App for MyApp {
                 egui::TextEdit::singleline(&mut self.working_settings.webhook_header)
                     .hint_text("Type webhook authorization header..."),
             );
+            ui.add_space(16.0);
+
+            let mut text = self.working_database_file.clone().unwrap_or_default();
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut text)
+                    .hint_text("Type the database file (if you want to change it)"),
+            );
+            if response.changed() {
+                self.working_database_file = if text.is_empty() { None } else { Some(text) };
+            }
+            ui.add_space(16.0);
+
             ui.horizontal(|ui| {
                 if ui.button("Save").clicked() {
+                    if let Some(database_file) = &self.working_database_file {
+                        if let Ok(conn) = create_backend_with_string(database_file.to_string()) {
+                            self.database = Database::new(Some(conn));
+                        }
+                    };
                     let _ = self.database.set_settings(self.working_settings.clone());
                 }
                 if ui.button("Close").clicked() {
                     self.working_settings = Settings::default();
+                    self.working_database_file = None;
                     self.show_settings = false;
                 }
             });

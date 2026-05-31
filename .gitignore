@@ -2,3 +2,4 @@ target/
 .direnv/
 .history/
 database.json
+result

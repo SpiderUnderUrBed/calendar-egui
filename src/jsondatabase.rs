@@ -91,7 +91,20 @@ impl JsonBackend {
         }
     }
 }
+pub fn create_backend_with_string(backend_info: String) -> Result<JsonBackend, Box<dyn Error>> {
+    // if Path::new(&backend_info).exists(){
+    //     Ok(())
+    // } else {
+    //     let mut file = File::create("database.json").unwrap();
+    //     file.write_all(&serde_json::to_vec(&JsonBackendContent::default()).unwrap())
+    //         .map_err(|e| e.to_string())?;
+    //     Ok(())
+    // }
 
+    Ok(
+        JsonBackend { file: backend_info.into() }
+    )
+}
 impl Database {
     pub fn new(conn: Option<JsonBackend>) -> Database {  
         let connection = conn.unwrap_or_default();
@@ -106,10 +119,17 @@ impl Database {
         }
     }
     pub fn ensure_database_conn(&self) -> Result<(), String> {
-        if Path::new("database.json").exists(){
+        if Path::new(&self.connection.file).exists(){
             Ok(())
         } else {
-            let mut file = File::create("database.json").unwrap();
+            if let Some(parent) = self.connection.file.parent() {
+                if !Path::new(parent).exists(){
+                    std::fs::create_dir_all(parent).map_err(|_| "error".to_string())?;
+                }
+            }
+            let mut file = {
+                File::create(self.connection.file.clone()).unwrap()
+            };
             file.write_all(&serde_json::to_vec(&JsonBackendContent::default()).unwrap())
                 .map_err(|e| e.to_string())?;
             Ok(())

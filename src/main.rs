@@ -122,6 +122,7 @@ struct MyApp {
     show_events: bool,
     show_settings: bool,
     current_month: Option<MonthTime>,
+    current_displayed_event: Option<Event>,
     working_settings: Settings,
     selected_date: Option<WorkingEvent>,
     rt: tokio::runtime::Runtime,
@@ -136,6 +137,7 @@ impl Default for MyApp {
             show_events: false,
             show_settings: false,
             current_month: None,
+            current_displayed_event: None,
             working_settings: Settings::default(),
             selected_date: None,
             rt: tokio::runtime::Runtime::new().unwrap(),
@@ -147,12 +149,12 @@ impl MyApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let database = 'database: {
             if let Some(proj_dirs) = ProjectDirs::from("", "", "calendar-rs-egui") {
-                // let config_dir = proj_dirs.config_dir(); 
+                // let config_dir = proj_dirs.config_dir();
                 let data_dir = proj_dirs.data_dir().to_string_lossy();
                 if let Ok(conn) = create_backend_with_string(format!("{data_dir}/database.json")) {
-                    break 'database database::Database::new(Some(conn)) 
+                    break 'database database::Database::new(Some(conn));
                 }
-            } 
+            }
             if let Ok(conn) = first_connection() {
                 database::Database::new(Some(conn))
             } else {
@@ -185,6 +187,7 @@ impl MyApp {
                 year: year.into(),
                 month,
             }),
+            current_displayed_event: None,
             working_settings: database.get_settings().unwrap(),
             selected_date: None,
             rt,
@@ -204,13 +207,40 @@ impl eframe::App for MyApp {
         let date_year = date.year() as u64;
         let year = self.current_month.clone().unwrap().year;
         let month = self.current_month.clone().unwrap().month;
+    
         let current_width = ui.available_width();
         let current_height = ui.available_width();
+
+        //let middle_position = egui::pos2(current_width / 3.3333, current_height / 3.3333);
 
         Popup::new(
             "events".into(),
             ui.ctx().clone(),
-            PopupAnchor::Position(egui::pos2(current_width / 16.0, current_height / 32.0)),
+            PopupAnchor::Position(egui::pos2(current_width / 3.3333, current_height / 3.3333)),
+            LayerId::new(Order::Foreground, "first-layer".into()),
+        )
+        .open(self.current_displayed_event.is_some())
+        .show(|ui| {
+            egui::Frame::new()
+                .fill(egui::Color32::from_rgb(50, 50, 200))
+                .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
+                .inner_margin(12.0)
+                .show(ui, |ui| {
+                    ui.set_min_width(550.0);
+                    ui.label(self.current_displayed_event.clone().unwrap().name);
+                    ui.label(self.current_displayed_event.clone().unwrap().description);
+                    ui.horizontal(|ui| {
+                        if ui.button("Close").clicked() {
+                            self.current_displayed_event = None;
+                        }
+                    });
+                });
+        });
+
+        Popup::new(
+            "events".into(),
+            ui.ctx().clone(),
+            PopupAnchor::Position(egui::pos2(current_width / 2.5, current_height / 6.3333)),
             LayerId::new(Order::Foreground, "first-layer".into()),
         )
         .open(self.show_events)
@@ -360,7 +390,7 @@ impl eframe::App for MyApp {
         Popup::new(
             "settings".into(),
             ui.ctx().clone(),
-            PopupAnchor::Position(egui::pos2(current_width / 16.0, current_height / 32.0)),
+            PopupAnchor::Position(egui::pos2(current_width / 2.5, current_height / 4.3333)),
             LayerId::new(Order::Foreground, "first-layer".into()),
         )
         .open(self.show_settings)
@@ -854,7 +884,18 @@ fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerRespo
                                 .fill(egui::Color32::from_rgb(0, 0, 0))
                                 .stroke(egui::Stroke::new(2.0, egui::Color32::WHITE))
                                 .inner_margin(12.0)
-                                .show(ui, |ui| ui.label(event.name));
+                                .show(ui, |ui| {
+                                    let display_text = {
+                                        if event.clone().name.len() > 20 {
+                                            format!("{}..", event.clone().name.get(0..20).unwrap())
+                                        } else {
+                                            event.clone().name
+                                        }
+                                    };
+                                    if ui.button(display_text).clicked() {
+                                        state.current_displayed_event = Some(event);
+                                    }
+                                });
                         }
                     });
             }

@@ -48,7 +48,7 @@ struct MonthTime {
     month: Month,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct WorkingEvent {
     time: DayTime,
     working_hour: String,
@@ -273,17 +273,14 @@ impl eframe::App for MyApp {
                                     ));
                                     if event.repeat_until_current_day {
                                         if ui.button("Freeze event at time").clicked() {
-                                            if let (Ok(working_hour), Ok(working_minute)) = (
-                                                &mut selected_date.working_hour.parse::<u64>(),
-                                                &mut selected_date.working_minute.parse::<u64>(),
-                                            ) {
-                                                let _ = self.database.remove_event_by_name(event.clone().name);
-                                                let mut new_event = event.clone();
-                                                new_event.freeze_at_time = Some(
-                                                    EventTime::new(selected_date.time.year, selected_date.time.month, selected_date.time.day, *working_hour, *working_minute)
-                                                );
-                                                let _ = self.database.add_event(new_event);
-                                            }
+                                            let hour_to_freeze = selected_date.working_hour.parse::<u64>().unwrap_or(event.time.get_hour());
+                                            let minuite_to_freeze = selected_date.working_minute.parse::<u64>().unwrap_or(event.time.get_minute());
+                                            let _ = self.database.remove_event_by_name(event.clone().name);
+                                            let mut new_event = event.clone();
+                                            new_event.freeze_at_time = Some(
+                                                EventTime::new(selected_date.time.year, selected_date.time.month, selected_date.time.day, hour_to_freeze, minuite_to_freeze)
+                                            );
+                                            let _ = self.database.add_event(new_event);
                                         }
                                     }
                                     if ui.button("Remove event").clicked() {

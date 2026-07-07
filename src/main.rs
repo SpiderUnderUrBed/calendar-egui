@@ -57,6 +57,7 @@ struct WorkingEvent {
     working_desc: String,
     working_notification_times: String,
     working_repeat_times: String,
+    working_mirror_times: String,
     working_update_repeat_for_current_day: bool,
 }
 impl Default for WorkingEvent {
@@ -77,6 +78,7 @@ impl Default for WorkingEvent {
             working_notification_times: Default::default(),
             working_repeat_times: Default::default(),
             working_update_repeat_for_current_day: Default::default(),
+            working_mirror_times: Default::default(),
         }
     }
 }
@@ -320,6 +322,10 @@ impl eframe::App for MyApp {
                         egui::TextEdit::singleline(&mut selected_date.working_repeat_times)
                             .hint_text("Type how often this event should repeat, valid units are xd (days)..."),
                     );
+                    ui.add(
+                        egui::TextEdit::singleline(&mut selected_date.working_mirror_times)
+                            .hint_text("Type how often this event should mirror, valid units are xd (days)..."),
+                    );
                     ui.checkbox(
                                 &mut selected_date.working_update_repeat_for_current_day,
                                 "Repeat until it reaches the current day (updates)",
@@ -361,6 +367,7 @@ impl eframe::App for MyApp {
                                 ),
                                 notify_times: parse_simple_times(&selected_date.working_notification_times),
                                 repeat_times: parse_simple_times(&selected_date.working_repeat_times),
+                                mirror_times: parse_simple_times(&selected_date.working_mirror_times),
                                 repeat_until_current_day: selected_date.working_update_repeat_for_current_day,
                                 freeze_at_time: None
                             };
@@ -660,7 +667,111 @@ fn get_month_by_index(index: usize) -> Result<Month, chrono::ParseMonthError> {
     ];
     Month::from_str(month_list[index - 1])
 }
-fn intersects_by_day(
+fn intersects_by_day_mirror(
+    original_time: DayTime,
+    times: Vec<SimpleTimes>,
+    comparison_time: DayTime,
+    freeze_at_time: &Option<EventTime>,
+) -> bool {
+    let date = {
+        let current_date = chrono::offset::Local::now();
+        if let Some(freeze_date) = freeze_at_time {
+            DayTime {
+                year: freeze_date.get_year(),
+                month: freeze_date.get_month(),
+                day: freeze_date.get_day(),
+            }
+        } else {
+            DayTime {
+                year: current_date.year() as u64,
+                month: get_month_by_index(current_date.month().try_into().unwrap()).unwrap(),
+                day: current_date.day() as u64,
+            }
+        }
+    };
+    let mut intersects = false;
+    for time in times.clone() {
+        let mut compare_day = false;
+        let mut compare_month = false;
+        let mut compare_year = false;
+        let final_time = match time {
+            SimpleTimes::Year(y) => {
+                compare_year = true;
+                DayTime {
+                    year: original_time.year + y,
+                    month: original_time.month,
+                    day: original_time.day,
+                }
+            }
+            SimpleTimes::Month(m) => {
+                compare_month = true;
+                DayTime {
+                    year: original_time.year,
+                    month: shift_months(original_time.month, m.try_into().unwrap()),
+                    day: original_time.day,
+                }
+            }
+            SimpleTimes::Week(w) => {
+                compare_day = true;
+                DayTime {
+                    year: original_time.year,
+                    month: original_time.month,
+                    day: original_time.day + (w * 7),
+                }
+            }
+            SimpleTimes::Day(d) => {
+                compare_day = true;
+                DayTime {
+                    year: original_time.year,
+                    month: original_time.month,
+                    day: original_time.day + d,
+                }
+            }
+            _ => DayTime {
+                year: original_time.year,
+                month: original_time.month,
+                day: original_time.day,
+            },
+        };
+        
+        if compare_day {
+            if convert_day_num_to_day(&comparison_time.day) == convert_day_num_to_day(&original_time.day) {
+                intersects = true;
+            }
+        } else if compare_month {
+            intersects = false;
+        } else if compare_year {
+            intersects = false;
+        }
+    }
+    intersects
+}
+#[derive(PartialEq)]
+enum Days {
+    Monday, 
+    Tuesday,
+    Wensday, 
+    Thursday, 
+    Friday,
+    Saturday,
+    Sunday
+}
+fn convert_day_num_to_day(day: &u64) -> Days {
+    let final_day = day % 7; 
+    match final_day {
+        0 => Days::Monday,
+        1 => Days::Tuesday,
+        2 => Days::Wensday,
+        3 => Days::Thursday,
+        4 => Days::Friday,
+        5 => Days::Saturday,
+        6 => Days::Sunday,
+        _ => {
+            Days::Monday
+        }
+    }
+}
+fn intersects_by_day_repeat(
     original_time: DayTime,
     times: Vec<SimpleTimes>,
     comparison_time: DayTime,
@@ -749,7 +860,7 @@ fn intersects_by_day(
                     || original_time.year == comparison_time.year
                 {
                     if final_time.year == comparison_time.year {
-                        intersects = !intersects_by_day(
+                        intersects = !intersects_by_day_repeat(
                             DayTime {
                                 year: final_time.year,
                                 month: final_time.month,
@@ -766,7 +877,7 @@ fn intersects_by_day(
                             freeze_at_time,
                         )
                     } else {
-                        intersects = intersects_by_day(
+                        intersects = intersects_by_day_repeat(
                             original_time.clone(),
                             vec![SimpleTimes::Month(
                                 get_month_index(final_time.month)
@@ -906,6 +1017,7 @@ fn date_cell(state: &mut MyApp, ui: &mut egui::Ui, day: u64) -> egui::InnerRespo
                     working_notification_times: String::new(),
                     working_repeat_times: String::new(),
                     working_update_repeat_for_current_day: false,
+                    working_mirror_times: String::new(),
                 });
                 state.show_events = true;
             }

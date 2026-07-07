@@ -2,4 +2,5 @@ target/
 .direnv/
 .history/
 database.json
+database.json.old
 result

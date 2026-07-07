@@ -15,7 +15,8 @@ use crate::DayTime;
 use crate::databasespec::Settings;
 use crate::databasespec::EventsDatabase;
 use crate::databasespec::SettingsDatabase;
-use crate::intersects_by_day;
+use crate::intersects_by_day_repeat;
+use crate::intersects_by_day_mirror;
 
 #[derive(Clone)]
 pub struct JsonBackend {
@@ -236,7 +237,8 @@ impl EventsDatabase for Database {
         let database = self.get_database()?;
         let events_that_day: Vec<Event> = database.events.iter().filter(|existing_events| 
             existing_events.time.clone().into_day_time() == time
-            || intersects_by_day(existing_events.time.clone().into_day_time() , existing_events.repeat_times.clone(), time.clone(), existing_events.repeat_until_current_day, &existing_events.freeze_at_time.clone())
+            || intersects_by_day_repeat(existing_events.time.clone().into_day_time() , existing_events.repeat_times.clone(), time.clone(), existing_events.repeat_until_current_day, &existing_events.freeze_at_time.clone())
+            || intersects_by_day_mirror(existing_events.time.clone().into_day_time(), existing_events.mirror_times.clone(), time.clone(), &existing_events.freeze_at_time.clone())
         ).cloned().collect();
         Ok(events_that_day)
     }

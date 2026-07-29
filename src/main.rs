@@ -465,8 +465,7 @@ impl eframe::App for MyApp {
                 ui.heading("Egui calendar");
                 let mut offset = month_start_offset(
                     self.current_month.clone().unwrap().year,
-                    self.current_month.clone().unwrap().month
-                    //get_month_index(self.current_month.clone().unwrap().month).unwrap() as u64,
+                    get_month_index(self.current_month.clone().unwrap().month).unwrap() as u64,
                 );
                 let days: u64 = get_days_in_month_chrono("", month);
                 ui.horizontal(|ui| {
@@ -1030,27 +1029,12 @@ fn days_in_first_week(year: u64, month: u64) -> u64 {
     let weekday = first_day.weekday().num_days_from_monday();
     7 - weekday as u64
 }
-fn month_start_offset(year: u64, month: Month) -> u64 {
-    // println!("month {}", month);
-    // NaiveDate::from_ymd_opt(year as i32, month as u32 + 1, 1)
-    //     .unwrap()
-    //     .weekday()
-    //     .num_days_from_monday() as u64
-    match month {
-        Month::January => 4,
-        Month::February => 1,
-        Month::March => 1,
-        Month::April => 3,
-        Month::May => 6,
-        Month::June => 1,
-        Month::July => 2,
-        Month::August => 6,
-        Month::September => 1,
-        Month::October => 3,
-        // November is a bit odd, potentially -1 as it starts on a sunday
-        Month::November => 0,
-        Month::December => 1,
-    }
+fn month_start_offset(year: u64, month: u64) -> u64 {
+    println!("month {}", month);
+    NaiveDate::from_ymd_opt(year as i32, month as u32 + 1, 1)
+        .unwrap()
+        .weekday()
+        .num_days_from_monday() as u64
 }
 fn get_days_in_month_chrono(year: &str, month: Month) -> u64 {
     match month {

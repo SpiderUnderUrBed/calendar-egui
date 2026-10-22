@@ -1030,7 +1030,6 @@ fn days_in_first_week(year: u64, month: u64) -> u64 {
     7 - weekday as u64
 }
 fn month_start_offset(year: u64, month: u64) -> u64 {
-    println!("month {}", month);
     NaiveDate::from_ymd_opt(year as i32, month as u32 + 1, 1)
         .unwrap()
         .weekday()

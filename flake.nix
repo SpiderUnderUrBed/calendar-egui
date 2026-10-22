@@ -20,9 +20,12 @@
           extensions = [ "rust-src" "rust-analyzer" ];
         };
 
+        cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+
         nativeBuildInputs = with pkgs; [
           rustToolchain
           pkg-config
+          makeWrapper
         ];
 
         buildInputs = with pkgs; [
@@ -33,30 +36,33 @@
           xorg.libXrandr
           xorg.libXi
           libGL
+          libglvnd
+          vulkan-loader
           fontconfig
           freetype
         ];
+
+        runtimeLibPath = "${pkgs.lib.makeLibraryPath buildInputs}:/run/opengl-driver/lib:/run/opengl-driver-32/lib";
       in
       {
         devShells.default = pkgs.mkShell {
           inherit nativeBuildInputs buildInputs;
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
-          RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/src";
+          LD_LIBRARY_PATH = runtimeLibPath;
+          RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
         };
 
         packages.default = pkgs.rustPlatform.buildRustPackage {
-          pname = "egui-app";
-          version = "0.1.0";
+          pname = cargoToml.package.name;
+          version = cargoToml.package.version;
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
 
           inherit nativeBuildInputs buildInputs;
 
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath buildInputs;
-
           postFixup = ''
-            patchelf --add-rpath ${pkgs.lib.makeLibraryPath buildInputs} $out/bin/*
+            wrapProgram $out/bin/${cargoToml.package.name} \
+              --prefix LD_LIBRARY_PATH : ${runtimeLibPath}
           '';
         };
       }

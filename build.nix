@@ -1,27 +1,46 @@
 { pkgs ? import <nixpkgs> {} }:
 
 pkgs.stdenv.mkDerivation {
-  name = "calendar-egui";
-  nativeBuildInputs = [ pkgs.autoPatchelfHook pkgs.libgcc ];
-  
+  pname = "calendar-egui";
+  version = "0.1.0";
   src = ./.;
 
-  installPhase = ''
-    mkdir -p $out/bin
-    cp target/release/calendar-egui $out/bin/
-  '';
+  nativeBuildInputs = with pkgs; [
+    autoPatchelfHook
+    addDriverRunpath
+  ];
+
+  buildInputs = [
+    pkgs.stdenv.cc.cc.lib
+  ];
 
   runtimeDependencies = with pkgs; [
     libxkbcommon
     libGL
-    #libgcc
- 
+    libglvnd      
+    vulkan-loader
+
     # wayland support
     wayland
 
     # x11 support
-    libX11
-    libXcursor
-    libXi
+    xorg.libX11
+    xorg.libXcursor
+    xorg.libXi
+    xorg.libXrandr
+    xorg.libxcb
   ];
+
+  dontBuild = true;
+
+  installPhase = ''
+    runHook preInstall
+    mkdir -p $out/bin
+    cp target/release/calendar-egui $out/bin/
+    runHook postInstall
+  '';
+
+  postFixup = ''
+    addDriverRunpath $out/bin/calendar-egui
+  '';
 }
